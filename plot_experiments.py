@@ -174,7 +174,7 @@ def plot_exp2():
 
     def _plot_lat(ax, values, ylabel):
         ax.plot(LATENCY_VALUES, [v * 100 if v else None for v in sync_accs_lat],
-                "s-o", color="tab:orange", label="Sync SGD")
+                "s-", color="tab:orange", label="Sync SGD")
         ax.plot(LATENCY_VALUES, [v * 100 if v else None for v in local_accs_lat],
                 "^-", color="tab:green", label=f"Local SGD H={LOCAL_H_EXP2}")
         if async_acc_ref is not None:
@@ -192,7 +192,7 @@ def plot_exp2():
     local_times_lat = [last(load(f"{EXP2_DIR}/local_{tag_lat(l)}.json"), "wall_clock_s") for l in LATENCY_VALUES]
     async_time_ref = last(async_ref, "wall_clock_s") if async_ref else None
 
-    ax2.plot(LATENCY_VALUES, sync_times_lat, "s-o", color="tab:orange", label="Sync SGD")
+    ax2.plot(LATENCY_VALUES, sync_times_lat, "s-", color="tab:orange", label="Sync SGD")
     ax2.plot(LATENCY_VALUES, local_times_lat, "^-", color="tab:green",
              label=f"Local SGD H={LOCAL_H_EXP2}")
     if async_time_ref is not None:
@@ -220,7 +220,7 @@ def plot_exp2():
 
     def _plot_strag(ax, sync_vals, local_vals, async_vals, ylabel):
         ax.plot(STRAGGLER_COUNTS, [v * 100 if v else None for v in sync_vals],
-                "s-o", color="tab:orange", label="Sync SGD")
+                "s-", color="tab:orange", label="Sync SGD")
         ax.plot(STRAGGLER_COUNTS, [v * 100 if v else None for v in local_vals],
                 "^-", color="tab:green", label=f"Local SGD H={LOCAL_H_EXP2}")
         ax.plot(STRAGGLER_COUNTS, [v * 100 if v else None for v in async_vals],
@@ -235,7 +235,7 @@ def plot_exp2():
                 "Final validation accuracy (%)")
     ax1.set_title("Accuracy vs. number of stragglers")
 
-    ax2.plot(STRAGGLER_COUNTS, sync_times_strag, "s-o", color="tab:orange", label="Sync SGD")
+    ax2.plot(STRAGGLER_COUNTS, sync_times_strag, "s-", color="tab:orange", label="Sync SGD")
     ax2.plot(STRAGGLER_COUNTS, local_times_strag, "^-", color="tab:green",
              label=f"Local SGD H={LOCAL_H_EXP2}")
     ax2.plot(STRAGGLER_COUNTS, async_times_strag, "D-", color="tab:red", label="Async SGD")
