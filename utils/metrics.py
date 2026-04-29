@@ -12,7 +12,7 @@ class MetricsLogger:
     def start(self):
         self.start_time = time.time()
 
-    def log_epoch(self, epoch, train_loss, val_accuracy):
+    def log_epoch(self, epoch, train_loss, val_accuracy, comm_bytes=None):
         elapsed = time.time() - self.start_time
         entry = {
             "epoch": epoch,
@@ -20,12 +20,16 @@ class MetricsLogger:
             "val_accuracy": val_accuracy,
             "wall_clock_s": round(elapsed, 2),
         }
+        if comm_bytes is not None:
+            entry["comm_bytes"] = comm_bytes
         self.history.append(entry)
+        comm_str = f" | Comm: {comm_bytes / 1e6:.2f} MB" if comm_bytes is not None else ""
         print(
             f"Epoch {epoch:3d} | "
             f"Loss: {train_loss:.4f} | "
             f"Val Acc: {val_accuracy:.2%} | "
             f"Time: {elapsed:.1f}s"
+            f"{comm_str}"
         )
 
     def summary(self):
@@ -34,6 +38,9 @@ class MetricsLogger:
         print(f"Final train loss:    {last['train_loss']:.4f}")
         print(f"Final val accuracy:  {last['val_accuracy']:.2%}")
         print(f"Total wall-clock:    {last['wall_clock_s']:.1f}s")
+        if "comm_bytes" in last:
+            total_comm = sum(e.get("comm_bytes", 0) for e in self.history)
+            print(f"Total comm bytes:    {total_comm / 1e6:.2f} MB")
 
     def save(self, path):
         with open(path, "w") as f:

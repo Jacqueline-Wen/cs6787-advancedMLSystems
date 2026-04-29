@@ -54,7 +54,10 @@ def worker(rank, world_size, args):
 
     logger = train_sync(
         rank, world_size, model, train_loader, test_loader,
-        args.lr, args.epochs, device
+        args.lr, args.epochs, device,
+        comm_latency=args.comm_latency,
+        straggler_delay=args.straggler_delay,
+        num_stragglers=args.num_stragglers,
     )
 
     if rank == 0 and args.save_metrics:
@@ -71,6 +74,12 @@ def main():
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--workers", type=int, default=2)
+    parser.add_argument("--comm-latency", type=float, default=0.0,
+                        help="Seconds to sleep after each gradient all-reduce (simulates network delay)")
+    parser.add_argument("--straggler-delay", type=float, default=0.0,
+                        help="Extra seconds to sleep per batch for straggler workers")
+    parser.add_argument("--num-stragglers", type=int, default=0,
+                        help="Number of highest-ranked workers to treat as stragglers")
     parser.add_argument("--save-metrics", type=str, default=None)
     args = parser.parse_args()
 

@@ -22,6 +22,10 @@ def main():
                         help="Scale LR by 1/(1+staleness)")
     parser.add_argument("--max-staleness", type=int, default=0,
                         help="Bounded staleness threshold (0 = unbounded)")
+    parser.add_argument("--straggler-delay", type=float, default=0.0,
+                        help="Extra seconds to sleep per step for straggler workers")
+    parser.add_argument("--num-stragglers", type=int, default=0,
+                        help="Number of highest-ranked workers to treat as stragglers")
     parser.add_argument("--save-metrics", type=str, default=None)
     args = parser.parse_args()
 
@@ -77,6 +81,8 @@ def main():
         staleness_aware=args.staleness_aware,
         max_staleness=args.max_staleness,
         device=device,
+        straggler_delay=args.straggler_delay,
+        num_stragglers=args.num_stragglers,
     )
 
     if args.save_metrics:

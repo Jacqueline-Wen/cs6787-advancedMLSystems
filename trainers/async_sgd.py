@@ -1,3 +1,5 @@
+import time
+
 import torch
 import torch.nn as nn
 import torch.multiprocessing as mp
@@ -13,7 +15,6 @@ class ParameterServer:
     """
 
     def __init__(self, model):
-        # Store flattened parameter shapes and shared tensors
         self.param_shapes = []
         self.shared_params = []
         for param in model.parameters():
@@ -66,14 +67,15 @@ def evaluate_from_server(ps, model, test_loader, device):
 
 def worker_loop(rank, world_size, ps, model_fn, train_loader, lr,
                 steps_per_epoch, total_steps, staleness_aware, max_staleness,
-                staleness_stats, loss_accumulator, loss_count):
+                staleness_stats, loss_accumulator, loss_count,
+                straggler_delay=0.0, num_stragglers=0):
     """Training loop for a single async worker.
 
     Args:
         rank: Worker rank.
         world_size: Total workers.
         ps: ParameterServer instance.
-        model_fn: Callable that returns a fresh model (for this worker).
+        model_fn: Callable that returns a fresh model.
         train_loader: DataLoader for this worker's data partition.
         lr: Base learning rate.
         steps_per_epoch: Steps that define one epoch.
@@ -82,24 +84,27 @@ def worker_loop(rank, world_size, ps, model_fn, train_loader, lr,
         max_staleness: If > 0, block when staleness exceeds this.
         staleness_stats: Shared list [sum_staleness, max_staleness, count].
         loss_accumulator: Shared mp.Value for accumulating loss.
-        loss_count: Shared mp.Value for counting batches.
+        loss_count: Shared mp.Value for counting steps.
+        straggler_delay: Seconds to sleep before each step for straggler ranks.
+        num_stragglers: Number of highest-ranked workers to treat as stragglers.
     """
     device = torch.device("cpu")
     model = model_fn().to(device)
     criterion = nn.CrossEntropyLoss()
+    is_straggler = num_stragglers > 0 and rank >= world_size - num_stragglers
 
     data_iter = iter(train_loader)
 
     while True:
-        # Check if we've reached the target steps
         current_global = ps.global_step.value
         if current_global >= total_steps:
             break
 
-        # Pull latest parameters
+        if is_straggler:
+            time.sleep(straggler_delay)
+
         pull_step = ps.pull(model)
 
-        # Get next batch, cycling through data
         try:
             data, target = next(data_iter)
         except StopIteration:
@@ -108,33 +113,27 @@ def worker_loop(rank, world_size, ps, model_fn, train_loader, lr,
 
         data, target = data.to(device), target.to(device)
 
-        # Forward + backward
         model.train()
         model.zero_grad()
         output = model(data)
         loss = criterion(output, target)
         loss.backward()
 
-        # Compute staleness
         staleness = ps.global_step.value - pull_step
 
-        # Bounded staleness: wait if too stale
         if max_staleness > 0:
             while staleness > max_staleness:
                 staleness = ps.global_step.value - pull_step
                 if ps.global_step.value >= total_steps:
                     return
 
-        # Push gradients
         ps.push(model, lr, staleness=staleness, staleness_aware=staleness_aware)
 
-        # Track staleness statistics
         with staleness_stats.get_lock():
             staleness_stats[0] += staleness
             staleness_stats[1] = max(staleness_stats[1], staleness)
             staleness_stats[2] += 1
 
-        # Accumulate loss for logging
         with loss_accumulator.get_lock():
             loss_accumulator.value += loss.item()
         with loss_count.get_lock():
@@ -142,7 +141,8 @@ def worker_loop(rank, world_size, ps, model_fn, train_loader, lr,
 
 
 def train_async(world_size, model_fn, train_loaders, test_loader, lr, epochs,
-                steps_per_epoch, staleness_aware, max_staleness, device):
+                steps_per_epoch, staleness_aware, max_staleness, device,
+                straggler_delay=0.0, num_stragglers=0):
     """Asynchronous SGD training with a shared-memory parameter server.
 
     Args:
@@ -156,18 +156,20 @@ def train_async(world_size, model_fn, train_loaders, test_loader, lr, epochs,
         staleness_aware: Whether to scale LR by 1/(1+staleness).
         max_staleness: Upper bound on staleness (0 = unbounded).
         device: torch device for evaluation.
+        straggler_delay: Seconds to sleep before each step for straggler workers.
+        num_stragglers: Number of highest-ranked workers to treat as stragglers.
 
     Returns:
         MetricsLogger with per-epoch history.
     """
-    # Initialize parameter server with a fresh model
     model = model_fn()
     ps = ParameterServer(model)
+    num_params = sum(p.numel() for p in model.parameters())
+    # pull + push per step = 2x num_params float32 bytes
+    bytes_per_step = num_params * 4 * 2
 
     total_steps = epochs * steps_per_epoch
 
-    # Shared statistics
-    # staleness_stats: [sum, max, count] as a shared array
     staleness_stats = mp.Array("d", [0.0, 0.0, 0.0])
     loss_accumulator = mp.Value("d", 0.0)
     loss_count = mp.Value("i", 0)
@@ -175,19 +177,18 @@ def train_async(world_size, model_fn, train_loaders, test_loader, lr, epochs,
     logger = MetricsLogger()
     logger.start()
 
-    # Launch workers
     processes = []
     for rank in range(world_size):
         p = mp.Process(
             target=worker_loop,
             args=(rank, world_size, ps, model_fn, train_loaders[rank],
                   lr, steps_per_epoch, total_steps, staleness_aware,
-                  max_staleness, staleness_stats, loss_accumulator, loss_count),
+                  max_staleness, staleness_stats, loss_accumulator, loss_count,
+                  straggler_delay, num_stragglers),
         )
         p.start()
         processes.append(p)
 
-    # Monitor and log at epoch boundaries
     eval_model = model_fn().to(device)
     last_logged_epoch = 0
 
@@ -196,24 +197,21 @@ def train_async(world_size, model_fn, train_loaders, test_loader, lr, epochs,
         current_epoch = current_step // steps_per_epoch
 
         if current_epoch > last_logged_epoch and current_epoch <= epochs:
-            # Log this epoch
             with loss_accumulator.get_lock():
                 with loss_count.get_lock():
-                    if loss_count.value > 0:
-                        avg_loss = loss_accumulator.value / loss_count.value
-                    else:
-                        avg_loss = 0.0
-                    # Reset for next epoch
+                    steps_this_epoch = loss_count.value
+                    avg_loss = loss_accumulator.value / steps_this_epoch if steps_this_epoch > 0 else 0.0
                     loss_accumulator.value = 0.0
                     loss_count.value = 0
 
+            comm_bytes = steps_this_epoch * bytes_per_step
             val_acc = evaluate_from_server(ps, eval_model, test_loader, device)
 
             avg_staleness = (staleness_stats[0] / staleness_stats[2]
                              if staleness_stats[2] > 0 else 0.0)
             max_s = staleness_stats[1]
 
-            logger.log_epoch(current_epoch, avg_loss, val_acc)
+            logger.log_epoch(current_epoch, avg_loss, val_acc, comm_bytes=comm_bytes)
             print(f"         Avg staleness: {avg_staleness:.1f} | "
                   f"Max staleness: {int(max_s)}")
 
@@ -222,11 +220,8 @@ def train_async(world_size, model_fn, train_loaders, test_loader, lr, epochs,
         if current_step >= total_steps:
             break
 
-        # Brief sleep to avoid busy-waiting in the monitor loop
-        import time
         time.sleep(0.1)
 
-    # Wait for all workers to finish
     for p in processes:
         p.join()
 
