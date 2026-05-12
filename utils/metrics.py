@@ -46,3 +46,11 @@ class MetricsLogger:
         with open(path, "w") as f:
             json.dump(self.history, f, indent=2)
         print(f"Metrics saved to {path}")
+
+
+def time_to_accuracy(history, threshold):
+    """Return wall-clock seconds when history first reaches threshold val accuracy, or None."""
+    for entry in history:
+        if entry["val_accuracy"] >= threshold:
+            return entry["wall_clock_s"]
+    return None
