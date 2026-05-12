@@ -1,37 +1,37 @@
 [
   {
     "epoch": 1,
-    "train_loss": 2.2863428592681885,
-    "val_accuracy": 0.1769,
-    "wall_clock_s": 52.81,
+    "train_loss": 2.2862963676452637,
+    "val_accuracy": 0.1768,
+    "wall_clock_s": 105.79,
     "comm_bytes": 350916160
   },
   {
     "epoch": 2,
-    "train_loss": 2.146618604660034,
+    "train_loss": 2.1464362144470215,
     "val_accuracy": 0.2736,
-    "wall_clock_s": 114.84,
+    "wall_clock_s": 211.27,
     "comm_bytes": 368461968
   },
   {
     "epoch": 3,
-    "train_loss": 1.9861375093460083,
-    "val_accuracy": 0.3338,
-    "wall_clock_s": 183.29,
+    "train_loss": 1.9862384796142578,
+    "val_accuracy": 0.3346,
+    "wall_clock_s": 316.46,
     "comm_bytes": 350916160
   },
   {
     "epoch": 4,
-    "train_loss": 1.9086887836456299,
-    "val_accuracy": 0.3352,
-    "wall_clock_s": 240.18,
+    "train_loss": 1.9089648723602295,
+    "val_accuracy": 0.3353,
+    "wall_clock_s": 421.9,
     "comm_bytes": 368461968
   },
   {
     "epoch": 5,
-    "train_loss": 1.8356454372406006,
+    "train_loss": 1.8359237909317017,
     "val_accuracy": 0.3834,
-    "wall_clock_s": 301.51,
+    "wall_clock_s": 527.21,
     "comm_bytes": 350916160
   }
 ]
